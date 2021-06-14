@@ -105,7 +105,6 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 
 	FTextureID curMtl = FNullTextureID();
 	OBJSurface *curSurface = nullptr;
-	unsigned int aggSurfFaceCount = 0;
 	unsigned int curSurfFaceCount = 0;
 	unsigned int curSmoothGroup = 0;
 
@@ -150,20 +149,15 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 			}
 			else
 			{
-				if (curSurfFaceCount > 0)
+				if (curSurfFaceCount)
 				{
-					// Add previous surface
-					curSurface->numFaces = curSurfFaceCount;
-					curSurface->faceStart = aggSurfFaceCount;
-					curSurface->index = surfaces.Size();
+					// Add current surface, and go to the next one
 					surfaces.Push(curSurface);
-					delete curSurface;
-					// Go to next surface
 					curSurface = new OBJSurface(curMtl);
-					aggSurfFaceCount += curSurfFaceCount;
 				}
 				else
 				{
+					// No faces in the current surface, so just assign the new skin
 					curSurface->skin = curMtl;
 				}
 			}
@@ -195,8 +189,10 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 				}
 			}
 			face.smoothGroup = curSmoothGroup;
-			faces.Push(face);
-			curSurfFaceCount += 1;
+			if (curSurface) {
+				curSurface->faces.Push(face);
+				curSurfFaceCount += 1;
+			}
 		}
 		else if (sc.Compare("s"))
 		{
@@ -221,8 +217,6 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 		FTextureID dummyMtl = LoadSkin("", "-NOFLAT-"); // Built-in to GZDoom
 		curSurface = new OBJSurface(dummyMtl);
 	}
-	curSurface->numFaces = curSurfFaceCount;
-	curSurface->faceStart = aggSurfFaceCount;
 	surfaces.Push(curSurface);
 
 	if (uvs.Size() == 0)
@@ -366,11 +360,11 @@ void FOBJModel::BuildVertexBuffer(FModelRenderer *renderer)
 
 	unsigned int vbufsize = 0;
 
-	for (size_t i = 0; i < surfaces.Size(); i++)
+	for (OBJSurface* surface : surfaces)
 	{
-		ConstructSurfaceTris(surfaces[i]);
-		surfaces[i]->vbStart = vbufsize;
-		vbufsize += surfaces[i]->numTris * 3;
+		ConstructSurfaceTris(surface);
+		surface->vbStart = vbufsize;
+		vbufsize += surface->numTris * 3;
 	}
 	// Initialize/populate vertFaces
 	if (hasMissingNormals && hasSmoothGroups)
@@ -423,7 +417,14 @@ void FOBJModel::BuildVertexBuffer(FModelRenderer *renderer)
 				mdv->SetNormal(nvec.X, nvec.Y, nvec.Z);
 			}
 		}
-		delete[] surfaces[i]->tris;
+	}
+
+	// CalculateNormalSmooth may access surfaces which were deleted, so do this
+	// here.
+	for (OBJSurface* surface : surfaces)
+	{
+		delete[] surface->tris;
+		surface->faces.Clear();
 	}
 
 	// Destroy vertFaces
@@ -447,11 +448,11 @@ void FOBJModel::ConstructSurfaceTris(OBJSurface *surf)
 {
 	unsigned int triCount = 0;
 
-	size_t start = surf->faceStart;
-	size_t end = start + surf->numFaces;
+	size_t start = 0;
+	size_t end = surf->faces.Size();
 	for (size_t i = start; i < end; i++)
 	{
-		triCount += faces[i].sideCount - 2;
+		triCount += surf->faces[i].sideCount - 2;
 	}
 
 	surf->numTris = triCount;
@@ -460,15 +461,15 @@ void FOBJModel::ConstructSurfaceTris(OBJSurface *surf)
 	for (size_t i = start, triIdx = 0; i < end; i++, triIdx++)
 	{
 		surf->tris[triIdx].sideCount = 3;
-		if (faces[i].sideCount == 3)
+		if (surf->faces[i].sideCount == 3)
 		{
-			surf->tris[triIdx].smoothGroup = faces[i].smoothGroup;
-			memcpy(surf->tris[triIdx].sides, faces[i].sides, sizeof(OBJFaceSide) * 3);
+			surf->tris[triIdx].smoothGroup = surf->faces[i].smoothGroup;
+			memcpy(surf->tris[triIdx].sides, surf->faces[i].sides, sizeof(OBJFaceSide) * 3);
 		}
-		else if (faces[i].sideCount == 4) // Triangulate face
+		else if (surf->faces[i].sideCount == 4) // Triangulate face
 		{
 			OBJFace *triangulated = new OBJFace[2];
-			TriangulateQuad(faces[i], triangulated);
+			TriangulateQuad(surf->faces[i], triangulated);
 			memcpy(surf->tris[triIdx].sides, triangulated[0].sides, sizeof(OBJFaceSide) * 3);
 			memcpy(surf->tris[triIdx+1].sides, triangulated[1].sides, sizeof(OBJFaceSide) * 3);
 			delete[] triangulated;
@@ -698,6 +699,5 @@ FOBJModel::~FOBJModel()
 	verts.Clear();
 	norms.Clear();
 	uvs.Clear();
-	faces.Clear();
-	surfaces.Clear();
+	surfaces.DeleteAndClear();
 }

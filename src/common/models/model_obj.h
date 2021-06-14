@@ -66,19 +66,17 @@ private:
 	struct OBJSurface // 1 surface per 'usemtl'
 	{
 		unsigned int numTris; // Number of triangulated faces
-		unsigned int numFaces; // Number of faces
 		unsigned int vbStart; // First index in vertex buffer
-		unsigned int faceStart; // Index of first face in faces array
-		unsigned int index; // Index in surfaces array
+		// unsigned int index; // Index in surfaces array
 		OBJFace* tris; // Triangles
 		FTextureID skin;
-		OBJSurface(FTextureID skin): numTris(0), numFaces(0), vbStart(0), faceStart(0), tris(nullptr), skin(skin) {}
+		TArray<OBJFace> faces;
+		OBJSurface(FTextureID skin): numTris(0), vbStart(0), tris(nullptr), skin(skin) {}
 	};
 
 	TArray<FVector3> verts;
 	TArray<FVector3> norms;
 	TArray<FVector2> uvs;
-	TArray<OBJFace> faces;
 	TDeletingArray<OBJSurface*> surfaces;
 	// TMap<FString, OBJSurface*> materialSurfaces; // Material name to surface
 	FScanner sc;
