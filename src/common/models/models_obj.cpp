@@ -127,17 +127,19 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 		{
 			// Get material name and try to load it
 			sc.MustGetString();
+			FString material(sc.String);
 
-			curMtl = LoadSkin("", sc.String);
+			curMtl = LoadSkin("", material);
 			if (!curMtl.isValid())
 			{
 				// Relative to model file path?
-				curMtl = LoadSkin(fn, sc.String);
+				curMtl = LoadSkin(fn, material);
 			}
 
 			if (!curMtl.isValid())
 			{
-				sc.ScriptMessage("Material %s (#%u) not found.", sc.String, surfaces.Size());
+				curMtl = LoadSkin("", "-NOFLAT-");
+				sc.ScriptMessage("Material %s not found.", material.GetChars());
 			}
 
 			// Build surface...
@@ -153,7 +155,8 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 					// Add previous surface
 					curSurface->numFaces = curSurfFaceCount;
 					curSurface->faceStart = aggSurfFaceCount;
-					surfaces.Push(*curSurface);
+					curSurface->index = surfaces.Size();
+					surfaces.Push(curSurface);
 					delete curSurface;
 					// Go to next surface
 					curSurface = new OBJSurface(curMtl);
@@ -220,8 +223,7 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 	}
 	curSurface->numFaces = curSurfFaceCount;
 	curSurface->faceStart = aggSurfFaceCount;
-	surfaces.Push(*curSurface);
-	delete curSurface;
+	surfaces.Push(curSurface);
 
 	if (uvs.Size() == 0)
 	{ // Needed so that OBJs without UVs can work
@@ -367,8 +369,8 @@ void FOBJModel::BuildVertexBuffer(FModelRenderer *renderer)
 	for (size_t i = 0; i < surfaces.Size(); i++)
 	{
 		ConstructSurfaceTris(surfaces[i]);
-		surfaces[i].vbStart = vbufsize;
-		vbufsize += surfaces[i].numTris * 3;
+		surfaces[i]->vbStart = vbufsize;
+		vbufsize += surfaces[i]->numTris * 3;
 	}
 	// Initialize/populate vertFaces
 	if (hasMissingNormals && hasSmoothGroups)
@@ -383,15 +385,15 @@ void FOBJModel::BuildVertexBuffer(FModelRenderer *renderer)
 
 	for (unsigned int i = 0; i < surfaces.Size(); i++)
 	{
-		for (unsigned int j = 0; j < surfaces[i].numTris; j++)
+		for (unsigned int j = 0; j < surfaces[i]->numTris; j++)
 		{
 			for (size_t side = 0; side < 3; side++)
 			{
 				FModelVertex *mdv = vertptr +
 					side + j * 3 + // Current surface and previous triangles
-					surfaces[i].vbStart; // Previous surfaces
+					surfaces[i]->vbStart; // Previous surfaces
 
-				OBJFaceSide &curSide = surfaces[i].tris[j].sides[2 - side];
+				OBJFaceSide &curSide = surfaces[i]->tris[j].sides[2 - side];
 
 				int vidx = curSide.vertref;
 				int uvidx = (curSide.uvref >= 0 && (unsigned int)curSide.uvref < uvs.Size()) ? curSide.uvref : 0;
@@ -409,19 +411,19 @@ void FOBJModel::BuildVertexBuffer(FModelRenderer *renderer)
 				}
 				else
 				{
-					if (surfaces[i].tris[j].smoothGroup == 0)
+					if (surfaces[i]->tris[j].smoothGroup == 0)
 					{
 						nvec = CalculateNormalFlat(i, j);
 					}
 					else
 					{
-						nvec = CalculateNormalSmooth(vidx, surfaces[i].tris[j].smoothGroup);
+						nvec = CalculateNormalSmooth(vidx, surfaces[i]->tris[j].smoothGroup);
 					}
 				}
 				mdv->SetNormal(nvec.X, nvec.Y, nvec.Z);
 			}
 		}
-		delete[] surfaces[i].tris;
+		delete[] surfaces[i]->tris;
 	}
 
 	// Destroy vertFaces
@@ -441,38 +443,38 @@ void FOBJModel::BuildVertexBuffer(FModelRenderer *renderer)
  *
  * @param[in,out] surf The surface to fill in the triangle data for
  */
-void FOBJModel::ConstructSurfaceTris(OBJSurface &surf)
+void FOBJModel::ConstructSurfaceTris(OBJSurface *surf)
 {
 	unsigned int triCount = 0;
 
-	size_t start = surf.faceStart;
-	size_t end = start + surf.numFaces;
+	size_t start = surf->faceStart;
+	size_t end = start + surf->numFaces;
 	for (size_t i = start; i < end; i++)
 	{
 		triCount += faces[i].sideCount - 2;
 	}
 
-	surf.numTris = triCount;
-	surf.tris = new OBJFace[triCount];
+	surf->numTris = triCount;
+	surf->tris = new OBJFace[triCount];
 
 	for (size_t i = start, triIdx = 0; i < end; i++, triIdx++)
 	{
-		surf.tris[triIdx].sideCount = 3;
+		surf->tris[triIdx].sideCount = 3;
 		if (faces[i].sideCount == 3)
 		{
-			surf.tris[triIdx].smoothGroup = faces[i].smoothGroup;
-			memcpy(surf.tris[triIdx].sides, faces[i].sides, sizeof(OBJFaceSide) * 3);
+			surf->tris[triIdx].smoothGroup = faces[i].smoothGroup;
+			memcpy(surf->tris[triIdx].sides, faces[i].sides, sizeof(OBJFaceSide) * 3);
 		}
 		else if (faces[i].sideCount == 4) // Triangulate face
 		{
 			OBJFace *triangulated = new OBJFace[2];
 			TriangulateQuad(faces[i], triangulated);
-			memcpy(surf.tris[triIdx].sides, triangulated[0].sides, sizeof(OBJFaceSide) * 3);
-			memcpy(surf.tris[triIdx+1].sides, triangulated[1].sides, sizeof(OBJFaceSide) * 3);
+			memcpy(surf->tris[triIdx].sides, triangulated[0].sides, sizeof(OBJFaceSide) * 3);
+			memcpy(surf->tris[triIdx+1].sides, triangulated[1].sides, sizeof(OBJFaceSide) * 3);
 			delete[] triangulated;
 			triIdx += 1; // Filling out two faces
 		}
-		DPrintf(DMSG_SPAMMY, "Smooth group: %d\n", surf.tris[triIdx].smoothGroup);
+		DPrintf(DMSG_SPAMMY, "Smooth group: %d\n", surf->tris[triIdx].smoothGroup);
 	}
 }
 
@@ -510,12 +512,12 @@ void FOBJModel::AddVertFaces() {
 	vertFaces = new TArray<OBJTriRef>[verts.Size()];
 	for (unsigned int i = 0; i < surfaces.Size(); i++)
 	{
-		for (unsigned int j = 0; j < surfaces[i].numTris; j++)
+		for (unsigned int j = 0; j < surfaces[i]->numTris; j++)
 		{
 			OBJTriRef otr = OBJTriRef(i, j);
-			for (size_t k = 0; k < surfaces[i].tris[j].sideCount; k++)
+			for (size_t k = 0; k < surfaces[i]->tris[j].sideCount; k++)
 			{
-				int vidx = surfaces[i].tris[j].sides[k].vertref;
+				int vidx = surfaces[i]->tris[j].sides[k].vertref;
 				vertFaces[vidx].Push(otr);
 			}
 		}
@@ -556,9 +558,9 @@ inline FVector2 FOBJModel::FixUV(FVector2 vecToRealign)
 FVector3 FOBJModel::CalculateNormalFlat(unsigned int surfIdx, unsigned int triIdx)
 {
 	// https://www.khronos.org/opengl/wiki/Calculating_a_Surface_Normal
-	int curVert = surfaces[surfIdx].tris[triIdx].sides[0].vertref;
-	int nextVert = surfaces[surfIdx].tris[triIdx].sides[2].vertref;
-	int lastVert = surfaces[surfIdx].tris[triIdx].sides[1].vertref;
+	int curVert = surfaces[surfIdx]->tris[triIdx].sides[0].vertref;
+	int nextVert = surfaces[surfIdx]->tris[triIdx].sides[2].vertref;
+	int lastVert = surfaces[surfIdx]->tris[triIdx].sides[1].vertref;
 
 	// Cross-multiply the U-vector and V-vector
 	FVector3 curVvec = RealignVector(verts[curVert]);
@@ -593,7 +595,7 @@ FVector3 FOBJModel::CalculateNormalSmooth(unsigned int vidx, unsigned int smooth
 	FVector3 vNormal(0,0,0);
 	for (size_t face = 0; face < vTris.Size(); face++)
 	{
-		OBJFace& tri = surfaces[vTris[face].surf].tris[vTris[face].tri];
+		OBJFace& tri = surfaces[vTris[face].surf]->tris[vTris[face].tri];
 		if (tri.smoothGroup == smoothGroup)
 		{
 			FVector3 fNormal = CalculateNormalFlat(vTris[face]);
@@ -632,7 +634,7 @@ void FOBJModel::RenderFrame(FModelRenderer *renderer, FGameTexture * skin, int f
 {
 	for (unsigned int i = 0; i < surfaces.Size(); i++)
 	{
-		OBJSurface *surf = &surfaces[i];
+		OBJSurface *surf = surfaces[i];
 
 		FGameTexture *userSkin = skin;
 		if (!userSkin && curSpriteMDLFrame)
@@ -680,7 +682,7 @@ void FOBJModel::AddSkins(uint8_t* hitlist)
 			return; // No need to precache skin that was replaced
 		}
 
-		OBJSurface * surf = &surfaces[i];
+		OBJSurface * surf = surfaces[i];
 		if (surf->skin.isValid())
 		{
 			hitlist[surf->skin.GetIndex()] |= FTextureManager::HIT_Flat;

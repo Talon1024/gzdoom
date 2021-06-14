@@ -69,6 +69,7 @@ private:
 		unsigned int numFaces; // Number of faces
 		unsigned int vbStart; // First index in vertex buffer
 		unsigned int faceStart; // Index of first face in faces array
+		unsigned int index; // Index in surfaces array
 		OBJFace* tris; // Triangles
 		FTextureID skin;
 		OBJSurface(FTextureID skin): numTris(0), numFaces(0), vbStart(0), faceStart(0), tris(nullptr), skin(skin) {}
@@ -78,14 +79,15 @@ private:
 	TArray<FVector3> norms;
 	TArray<FVector2> uvs;
 	TArray<OBJFace> faces;
-	TArray<OBJSurface> surfaces;
+	TDeletingArray<OBJSurface*> surfaces;
+	// TMap<FString, OBJSurface*> materialSurfaces; // Material name to surface
 	FScanner sc;
 	TArray<OBJTriRef>* vertFaces;
 
 	int ResolveIndex(int origIndex, FaceElement el);
 	template<typename T, size_t L> void ParseVector(TArray<T> &array);
 	bool ParseFaceSide(const FString &side, OBJFace &face, int sidx);
-	void ConstructSurfaceTris(OBJSurface &surf);
+	void ConstructSurfaceTris(OBJSurface *surf);
 	void AddVertFaces();
 	void TriangulateQuad(const OBJFace &quad, OBJFace *tris);
 	FVector3 RealignVector(FVector3 vecToRealign);
