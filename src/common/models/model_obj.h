@@ -71,14 +71,13 @@ private:
 		OBJFace* tris; // Triangles
 		FTextureID skin;
 		TArray<OBJFace> faces;
-		OBJSurface(FTextureID skin): numTris(0), vbStart(0), tris(nullptr), skin(skin) {}
+		OBJSurface(FTextureID skin): numTris(0), vbStart(0), tris(nullptr), skin(skin), faces() {}
 	};
 
 	TArray<FVector3> verts;
 	TArray<FVector3> norms;
 	TArray<FVector2> uvs;
 	TDeletingArray<OBJSurface*> surfaces;
-	// TMap<FString, OBJSurface*> materialSurfaces; // Material name to surface
 	FScanner sc;
 	TArray<OBJTriRef>* vertFaces;
 
@@ -90,7 +89,7 @@ private:
 	void TriangulateQuad(const OBJFace &quad, OBJFace *tris);
 	FVector3 RealignVector(FVector3 vecToRealign);
 	FVector2 FixUV(FVector2 vecToRealign);
-	FVector3 CalculateNormalFlat(unsigned int surfIdx, unsigned int triIdx);
+	FVector3 CalculateNormalFlat(const OBJSurface* surface, unsigned int triIdx);
 	FVector3 CalculateNormalFlat(OBJTriRef otr);
 	FVector3 CalculateNormalSmooth(unsigned int vidx, unsigned int smoothGroup);
 public:
