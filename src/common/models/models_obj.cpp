@@ -103,6 +103,9 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 	}
 	sc.OpenString(objName, objBuf);
 
+	// Keep the original behavior by having at least one surface if there are
+	// some faces which don't have a specific material associated with them.
+	TArray<OBJFace> leftoverFaces;
 	FTextureID curMtl = FNullTextureID();
 	OBJSurface* curSurface = nullptr;
 	unsigned int curSurfFaceCount = 0;
@@ -190,6 +193,10 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 				curSurface->faces.Push(face);
 				curSurfFaceCount += 1;
 			}
+			else
+			{
+				leftoverFaces.Push(face);
+			}
 		}
 		else if (sc.Compare("s"))
 		{
@@ -208,6 +215,17 @@ bool FOBJModel::Load(const char* fn, int lumpnum, const char* buffer, int length
 		}
 	}
 	sc.Close();
+
+	if (!curSurface)
+	{
+		curMtl = LoadSkin("", "-NOFLAT-"); // Built-in to GZDoom
+		curSurface = new OBJSurface(curMtl);
+		surfaces.Push(curSurface);
+		for (OBJFace face : leftoverFaces)
+		{
+			curSurface->faces.Push(face);
+		}
+	}
 
 	if (uvs.Size() == 0)
 	{ // Needed so that OBJs without UVs can work
